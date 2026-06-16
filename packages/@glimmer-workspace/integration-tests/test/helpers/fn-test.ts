@@ -159,8 +159,8 @@ class FnTest extends RenderTest {
     }, /You must pass a function as the `fn` helper's first argument, you passed null. While rendering:\n{2}this.myFunc/u);
   }
 
-  @test
-  'an unbound method passed to fn is invoked with the object it was read from as `this`'(
+  @test({ skip: !DEBUG })
+  'asserts if the provided function accesses `this` without being bound prior to passing to fn'(
     assert: Assert
   ) {
     this.render(`<Stash @stashedFn={{fn this.myFunc this.arg1}}/>`, {
@@ -172,33 +172,24 @@ class FnTest extends RenderTest {
       arg2: 'bar',
     });
 
-    assert.strictEqual(
-      this.stashedFn?.(),
-      'arg1: foo, arg2: bar',
-      'this.myFunc preserves its `this` through fn'
-    );
+    assert.throws(() => {
+      this.stashedFn?.();
+    }, /You accessed `this.arg2` from a function passed to the `fn` helper, but the function itself was not bound to a valid `this` context. Consider updating to use a bound function./u);
   }
 
-  @test
-  '`this` within the callback is the object the method was read from'(assert: Assert) {
-    let seenThis: unknown;
-
+  @test({ skip: !DEBUG })
+  'there is no `this` context within the callback'(assert: Assert) {
     this.render(`<Stash @stashedFn={{fn this.myFunc this.arg1}}/>`, {
       myFunc() {
         assert.step('calling stashed function');
-        seenThis = this;
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string
+        assert.throws(() => String(this), /not bound to a valid `this` context/u);
+        // assert.strictEqual(this, null, 'this is bound to null in production builds');
       },
-
-      arg1: 'foo',
     });
 
     this.stashedFn?.();
     assert.verifySteps(['calling stashed function']);
-    assert.strictEqual(
-      (seenThis as Record<string, unknown> | undefined)?.['arg1'],
-      'foo',
-      'this is the object myFunc was read from'
-    );
   }
 
   @test
