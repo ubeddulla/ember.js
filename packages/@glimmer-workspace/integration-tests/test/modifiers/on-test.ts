@@ -366,26 +366,21 @@ if (hasDom) {
       }, /You must pass a function as the second argument to the `on` modifier; you passed null. While rendering:\n{2}this.foo/u);
     }
 
-    @test
-    'an unbound method is invoked with the object it was read from as `this`'(assert: Assert) {
-      let seenThis: unknown;
-
+    @test({ skip: !DEBUG })
+    'asserts if the provided callback accesses `this` without being bound prior to passing to on'(
+      assert: Assert
+    ) {
       this.render(`<button {{on 'click' this.myFunc}}>Click Me</button>`, {
         myFunc(this: any) {
-          seenThis = this;
-          consume(this.arg1);
+          assert.throws(() => {
+            consume(this.arg1);
+          }, /You accessed `this.arg1` from a function passed to the `on` modifier, but the function itself was not bound to a valid `this` context. Consider updating to use a bound function/u);
         },
 
         arg1: 'foo',
       });
 
       this.findButton().click();
-
-      assert.strictEqual(
-        (seenThis as Record<string, unknown> | undefined)?.['arg1'],
-        'foo',
-        '`this` is the object myFunc was read from'
-      );
     }
 
     @test({ skip: !DEBUG })
