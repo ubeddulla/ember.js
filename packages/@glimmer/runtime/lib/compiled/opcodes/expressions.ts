@@ -41,11 +41,15 @@ import debugToString from '@glimmer/debug-util/lib/debug-to-string';
 import assert from '@glimmer/debug-util/lib/assert';
 import { _hasDestroyableChildren, associateDestroyableChild, destroy } from '@glimmer/destroyable';
 import { debugAssert, toBool } from '@glimmer/global-context';
-import { getInternalHelperManager } from '@glimmer/manager/lib/internal/api';
+import {
+  getInternalHelperManager,
+  hasCustomHelperManager,
+} from '@glimmer/manager/lib/internal/api';
 import {
   childRefFor,
   createComputeRef,
   FALSE_REFERENCE,
+  parentRefFor,
   TRUE_REFERENCE,
   UNDEFINED_REFERENCE,
   valueForRef,
@@ -125,7 +129,7 @@ APPEND_OPCODES.add(VM_DYNAMIC_HELPER_OP, (vm) => {
 
       associateDestroyableChild(helperInstanceRef, helperRef);
     } else if (isIndexable(definition)) {
-      let helper = resolveHelper(definition, ref);
+      let helper = resolveHelper(bindFunctionToParent(definition, ref), ref);
       helperRef = helper(args, initialOwner);
 
       if (_hasDestroyableChildren(helperRef)) {
@@ -145,6 +149,43 @@ APPEND_OPCODES.add(VM_DYNAMIC_HELPER_OP, (vm) => {
   vm.associateDestroyable(helperInstanceRef);
   vm.loadValue($v0, helperValueRef);
 });
+
+/**
+ * When a plain function is invoked from a path expression (`{{(this.obj.method)}}`,
+ * `{{item.greet}}`), call it with the object it was read from as `this`, matching
+ * the JavaScript semantics of `obj.method()`.
+ *
+ * This is the template-invocation call site, so it only affects functions that are
+ * actually *invoked* here. Functions merely passed along as values (e.g. to the
+ * `{{on}}` modifier or the `(fn)` helper) flow through different opcodes and are
+ * left untouched. Functions with an explicitly-associated helper manager, and
+ * already-bound functions (arrow functions, `.bind()`ed functions), are unaffected.
+ *
+ * The parent's value is read here, inside the helper compute, so that replacing the
+ * base object rebinds `this` on the next revision.
+ */
+function bindFunctionToParent(
+  definition: HelperDefinitionState,
+  ref: Reference
+): HelperDefinitionState {
+  if (typeof definition !== 'function' || hasCustomHelperManager(definition)) {
+    return definition;
+  }
+
+  let parentRef = parentRefFor(ref);
+
+  if (parentRef === null) {
+    return definition;
+  }
+
+  let self = valueForRef(parentRef);
+
+  if ((typeof self === 'object' && self !== null) || typeof self === 'function') {
+    return (definition as (this: unknown, ...args: unknown[]) => unknown).bind(self);
+  }
+
+  return definition;
+}
 
 function resolveHelper(definition: HelperDefinitionState, ref: Reference): Helper {
   let managerOrHelper = getInternalHelperManager(definition, true);

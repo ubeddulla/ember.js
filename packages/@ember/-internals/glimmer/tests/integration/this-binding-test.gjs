@@ -1,13 +1,13 @@
 import { set } from '@ember/object';
 import { RenderingTestCase, moduleFor, runTask } from 'internal-test-helpers';
 import { fn } from '@ember/helper';
-import { on } from '@ember/modifier';
+import { helperCapabilities, setHelperManager } from '@glimmer/manager';
 import { Component } from '../utils/helpers';
 
 moduleFor(
-  'Path expression this-binding for class methods',
+  'Automatic this-binding for class methods directly called from the template',
   class extends RenderingTestCase {
-    ['@test this.foo maintains this binding'](assert) {
+    ['@test class method'](assert) {
       let instance;
       let seenThis;
 
@@ -21,23 +21,16 @@ moduleFor(
           seenThis = this;
         }
 
-        <template><button type="button" {{on "click" this.foo}}>click me</button></template>
+        <template>{{(this.foo)}}</template>
       }
 
       this.render(`<this.Demo />`, { Demo });
 
-      assert.ok(instance, 'component instance was captured');
-
-      runTask(() => this.$('button').click());
-
-      assert.strictEqual(
-        seenThis,
-        instance,
-        '`this` inside the class method should be the component instance'
-      );
+      assert.ok(instance);
+      assert.strictEqual(seenThis, instance);
     }
 
-    ['@test this.obj.method maintains this binding through property chain'](assert) {
+    ['@test maintains binding through property chain'](assert) {
       let innerInstance;
       let seenThis;
 
@@ -57,23 +50,16 @@ moduleFor(
           this.obj = new Inner();
         }
 
-        <template><button type="button" {{on "click" this.obj.method}}>click me</button></template>
+        <template>{{ (this.obj.method) }}</template>
       }
 
       this.render(`<this.Demo />`, { Demo });
 
-      assert.ok(innerInstance, 'inner instance was captured');
-
-      runTask(() => this.$('button').click());
-
-      assert.strictEqual(
-        seenThis,
-        innerInstance,
-        '`this` inside the nested method should be the inner object instance'
-      );
+      assert.ok(innerInstance);
+      assert.strictEqual(seenThis, innerInstance);
     }
 
-    ['@test replacing the base object rebinds `this` for subsequent invocations'](assert) {
+    ['@test replacing the base object uses correct `this`'](assert) {
       let instance;
       let seenThis;
 
@@ -90,21 +76,18 @@ moduleFor(
           this.obj = new Inner();
         }
 
-        <template><button type="button" {{on "click" this.obj.method}}>click me</button></template>
+        <template>{{ (this.obj.method) }}</template>
       }
 
       this.render(`<this.Demo />`, { Demo });
 
       let first = instance.obj;
-
-      runTask(() => this.$('button').click());
-      assert.strictEqual(seenThis, first, 'first click sees the original object');
+      assert.strictEqual(seenThis, first);
 
       let second = new Inner();
       runTask(() => set(instance, 'obj', second));
 
-      runTask(() => this.$('button').click());
-      assert.strictEqual(seenThis, second, 'after the base object is replaced, `this` is fresh');
+      assert.strictEqual(seenThis, second);
     }
 
     ['@test a method passed as an argument stays bound to its original object'](assert) {
@@ -112,7 +95,7 @@ moduleFor(
       let seenThis;
 
       class Child extends Component {
-        <template><button type="button" {{on "click" @cb}}>click me</button></template>
+        <template>{{ (@cb) }}</template>
       }
 
       class Demo extends Component {
@@ -130,13 +113,7 @@ moduleFor(
 
       this.render(`<this.Demo />`, { Demo });
 
-      runTask(() => this.$('button').click());
-
-      assert.strictEqual(
-        seenThis,
-        instance,
-        '`this` inside the method is the component the method was read from, not the child'
-      );
+      assert.strictEqual(seenThis, instance);
     }
 
     ['@test #let block param preserves this binding on method access'](assert) {
@@ -163,23 +140,16 @@ moduleFor(
 
         <template>
           {{#let this.obj as |o|}}
-            <button type="button" {{on "click" (fn o.method "did it")}}>click me</button>
+            {{(o.method "did it")}}
           {{/let}}
         </template>
       }
 
       this.render(`<this.Demo />`, { Demo });
 
-      assert.ok(innerInstance, 'inner instance was captured');
-
-      runTask(() => this.$('button').click());
-
-      assert.strictEqual(
-        seenThis,
-        innerInstance,
-        '`this` inside o.method should be the inner object instance'
-      );
-      assert.strictEqual(receivedArg, 'did it', 'argument from fn is passed through');
+      assert.ok(innerInstance);
+      assert.strictEqual(seenThis, innerInstance);
+      assert.strictEqual(receivedArg, 'did it', 'argument is passed through to the method');
     }
 
     ['@test each over array of objects preserves this binding on item methods'](assert) {
@@ -204,19 +174,17 @@ moduleFor(
         }
 
         <template>
-          {{#each this.items as |item|}}
-            <button type="button" class={{item.name}} {{on "click" item.greet}}>{{item.name}}</button>
-          {{/each}}
+          <ul>
+            {{#each this.items as |item|}}
+              <li>{{item.greet}}: {{item.name}}</li>
+            {{/each}}
+          </ul>
         </template>
       }
 
       this.render(`<this.Demo />`, { Demo });
 
-      runTask(() => this.$('button.alice').click());
-      runTask(() => this.$('button.bob').click());
-      runTask(() => this.$('button.carol').click());
-
-      assert.strictEqual(seenPairs.length, 3, 'all three handlers fired');
+      assert.strictEqual(seenPairs.length, 3);
       assert.strictEqual(seenPairs[0].self, items[0], 'alice: this is the Item instance');
       assert.strictEqual(seenPairs[0].name, 'alice', 'alice: this.name is correct');
       assert.strictEqual(seenPairs[1].self, items[1], 'bob: this is the Item instance');
@@ -239,17 +207,119 @@ moduleFor(
           seenThis = this;
         };
 
-        <template><button type="button" {{on "click" this.foo}}>click me</button></template>
+        <template>{{this.foo}}</template>
       }
 
       this.render(`<this.Demo />`, { Demo });
 
-      runTask(() => this.$('button').click());
+      assert.strictEqual(seenThis, instance);
+    }
 
+    ['@test (fn) on methods still behaves appropriately'](assert) {
+      let instance;
+      let seenThis;
+
+      class Demo extends Component {
+        constructor(...args) {
+          super(...args);
+          instance = this;
+        }
+
+        foo = () => {
+          seenThis = this;
+        };
+
+        <template>
+          {{#let (fn this.foo) as |fned|}}
+            {{ (fned) }}
+          {{/let}}
+        </template>
+      }
+
+      this.render(`<this.Demo />`, { Demo });
+
+      assert.strictEqual(seenThis, instance);
+    }
+
+    ['@test a function with a custom helper manager read off a path keeps its manager'](assert) {
+      let sawDefinition;
+
+      class MyHelperManager {
+        capabilities = helperCapabilities('3.23', { hasValue: true });
+
+        createHelper(definition, args) {
+          return { definition, args };
+        }
+
+        getValue({ definition }) {
+          sawDefinition = definition;
+          return 'CUSTOM_MANAGER_RAN';
+        }
+
+        getDebugName() {
+          return 'my-custom-helper';
+        }
+      }
+
+      function customHelper() {
+        return 'PLAIN_FN_RAN';
+      }
+      setHelperManager(() => new MyHelperManager(), customHelper);
+
+      class Inner {
+        customHelper = customHelper;
+      }
+
+      class Demo extends Component {
+        constructor(...args) {
+          super(...args);
+          this.obj = new Inner();
+        }
+
+        <template>{{(this.obj.customHelper)}}</template>
+      }
+
+      this.render(`<this.Demo />`, { Demo });
+
+      this.assertText('CUSTOM_MANAGER_RAN');
       assert.strictEqual(
+        sawDefinition,
+        customHelper,
+        // i.e.: a.foo !== a.foo.bind(a)
+        'the custom manager received the original function, not a `.bind()` wrapper'
+      );
+    }
+
+    ['@test a plain method passed through (fn) is not this-bound'](assert) {
+      let innerInstance;
+      let seenThis = 'UNSET';
+
+      class Inner {
+        constructor() {
+          innerInstance = this;
+        }
+
+        method() {
+          seenThis = this;
+        }
+      }
+
+      class Demo extends Component {
+        constructor(...args) {
+          super(...args);
+          this.obj = new Inner();
+        }
+
+        <template>{{#let (fn this.obj.method) as |f|}}{{(f)}}{{/let}}</template>
+      }
+
+      this.render(`<this.Demo />`, { Demo });
+
+      assert.notStrictEqual(seenThis, 'UNSET', 'the method actually ran');
+      assert.notStrictEqual(
         seenThis,
-        instance,
-        'an arrow function field still sees the component instance'
+        innerInstance,
+        'a plain method passed through `(fn)` is NOT bound to the object it was read from — `(fn)` value-passes the function and only the direct template call site binds'
       );
     }
   }

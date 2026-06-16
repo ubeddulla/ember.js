@@ -245,7 +245,7 @@ export function childRefFor(_parentRef: Reference, path: string): Reference {
   }
 
   if (child !== UNDEFINED_REFERENCE) {
-    (child as ReferenceImpl).parent = parentRef;
+    child.parent = parentRef;
   }
 
   children.set(path, child);
@@ -257,12 +257,12 @@ export function childRefFor(_parentRef: Reference, path: string): Reference {
  * Returns the reference for the object a property was read from, when the
  * given reference was created by a property read (e.g. the `obj` in `obj.someFn`).
  *
- * This allows consumers that invoke function values, like the `on` modifier and
- * the `fn` helper, to call the function with the same `this` JavaScript would
+ * This allows a function value invoked directly from a template (e.g.
+ * `{{(this.obj.someFn)}}`) to be called with the same `this` JavaScript would
  * use for `obj.someFn()`, rather than requiring the function to be pre-bound.
  */
-export function parentRefFor(_ref: Reference): Nullable<Reference> {
-  return (_ref as ReferenceImpl).parent;
+export function parentRefFor(ref: Reference): Nullable<Reference> {
+  return ref.parent;
 }
 
 export function childRefFromParts(root: Reference, parts: string[]): Reference {
@@ -284,7 +284,7 @@ if (DEBUG) {
 
     ref[REFERENCE] = inner[REFERENCE];
 
-    (ref as ReferenceImpl).parent = (inner as ReferenceImpl).parent;
+    ref.parent = inner.parent;
 
     ref.debugLabel = debugLabel;
 

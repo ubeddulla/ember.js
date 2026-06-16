@@ -235,6 +235,16 @@ export function hasInternalModifierManager(definition: object): boolean {
   );
 }
 
+/**
+ * Whether a value has a helper manager explicitly associated with it, as
+ * opposed to a plain function (which falls back to the default function helper
+ * manager). Used to decide whether a function invoked from a path expression
+ * may be safely re-bound to the object it was read from.
+ */
+export function hasCustomHelperManager(definition: object): boolean {
+  return getManager(HELPER_MANAGERS, definition) !== undefined;
+}
+
 function hasDefaultComponentManager(_definition: object): boolean {
   return false;
 }
